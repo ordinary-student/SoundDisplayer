@@ -1,7 +1,9 @@
 # -*- coding:utf-8 -*-
+import random
 import sys
-from PySide2.QtCore import QEasingCurve, QPropertyAnimation, QRect, QThread, Signal, Qt
-from PySide2.QtGui import QFont, QIcon, QPixmap, QMouseEvent, QContextMenuEvent, QKeyEvent
+import keyword
+from PySide2.QtCore import QEasingCurve, QParallelAnimationGroup, QPoint, QPropertyAnimation, QRect, QThread, Signal, Qt, Property
+from PySide2.QtGui import QColor, QFont, QIcon, QPalette, QPixmap, QMouseEvent, QContextMenuEvent, QKeyEvent
 from PySide2.QtWidgets import QAction, QApplication, QLabel, QMenu, QMessageBox, QWidget
 import pyqtgraph as pg
 import numpy as np
@@ -15,9 +17,9 @@ APP_MESSAGE = '''声音立绘展示器'''
 # 作者
 AUTHOR = '''ordinary-student'''
 # 版本
-VERSION = '''v1.0.0'''
+VERSION = '''v2.0.0'''
 # 最后更新日期
-LAST_UPDATE = '''2021-07-09'''
+LAST_UPDATE = '''2021-07-11'''
 
 # 身体图片路径
 BODY_PIC_PATH = '''resources/body.png'''
@@ -29,18 +31,19 @@ ABOUT_PIC_PATH = '''resources/about.png'''
 EXIT_PIC_PATH = '''resources/exit.png'''
 
 
-class DetectSound(QThread):
-    '''创建QThread类来实时获取麦克风说话音量'''
-    # 初始化Signal类属性 发射类型为list
+class DetectSoundThread(QThread):
+    '''创建检测麦克风音量线程类'''
+    # 声音采样信号 发射类型为list
     volume_signal = Signal(list)
 
     def __init__(self):
         '''构造函数'''
-        super(DetectSound, self).__init__()
+        super(DetectSoundThread, self).__init__()
+        # 运行标志
         self.runFlag = True
 
     def run(self):
-        '''QThread内建的run函数 所有耗时长的操作都写在这里面 防止卡死界面'''
+        '''线程运行'''
         # 初始化PyAudio实例
         p = pyaudio.PyAudio()
         # 打开音频流对象 读取话筒输入缓冲区
@@ -56,7 +59,7 @@ class DetectSound(QThread):
             volume.append(audioop.rms(data, 2) ** 0.8 / 4000 + 1)
             # 当列表长度到达180个时
             if len(volume) == 180:
-                # 用pyqtSignal将响度列表发射给主窗口线程
+                # 将响度列表发射给主窗口线程
                 self.volume_signal.emit(volume)
                 # 清空列表 重新采样
                 volume = []
@@ -98,6 +101,166 @@ class HairLabel(QLabel):
             self.move(self.pos() + e.pos() - self.start_pos)
 
 
+class TextLabel(QLabel):
+    '''用于显示文字的QLabel类'''
+
+    def __init__(self, text: str, parent: QWidget):
+        '''构造函数'''
+        super().__init__(text, parent)
+        self.text_animation = None
+
+    def setTextColor(self, color: QColor):
+        '''设置文字颜色'''
+        # 调色板
+        palette = self.palette()
+        # 设置字体颜色
+        palette.setColor(QPalette.WindowText, color)
+        # 上色
+        self.setPalette(palette)
+
+    # 颜色属性
+    color = Property(QColor, fset=setTextColor)
+
+    def startAnimation(self):
+        '''启动动画'''
+        # 停止上次的动画
+        self.stopAnimation()
+        # 创建动画
+        self.text_animation = QPropertyAnimation(self, b"color")
+        # 持续随机10-15秒
+        self.text_animation.setDuration(random.randint(10000, 15000))
+
+        # 起始值 红色
+        self.text_animation.setStartValue(QColor(255, 0, 0, 100))
+        # 循环设置关键帧
+        for i in range(7):
+            self.text_animation.setKeyValueAt(
+                i/8, QColor(random.randint(0, 255), random.randint(0, 255), random.randint(0, 255), random.randint(50, 255)))
+        # 结束值 红
+        self.text_animation.setEndValue(QColor(255, 0, 0, 100))
+        # 开始动画
+        self.text_animation.start()
+
+    def stopAnimation(self):
+        '''停止动画'''
+        if self.text_animation != None:
+            self.text_animation.stop()
+
+    def mousePressEvent(self, e: QMouseEvent):
+        '''重写鼠标按下事件'''
+        # 左键按下
+        if e.buttons() == Qt.LeftButton:
+            # 记录第一下鼠标点击的坐标
+            self.start_pos = e.pos()
+
+    def mouseMoveEvent(self, e: QMouseEvent):
+        '''重写鼠标移动事件'''
+        # 左键按下
+        if e.buttons() == Qt.LeftButton:
+            # 移动至当前坐标加上鼠标移动偏移量
+            self.move(self.pos() + e.pos() - self.start_pos)
+
+
+class TextSmokeThread(QThread):
+    '''创建文字烟雾线程类'''
+    # 文字标签变色动画
+    colorChange_signal = Signal()
+    # 文字烟雾启动动画信号
+    startAnimation_signal = Signal()
+
+    def __init__(self):
+        '''构造函数'''
+        super(TextSmokeThread, self).__init__()
+        # 运行标志
+        self.runFlag = True
+        self.times = 0
+
+    def run(self):
+        '''运行线程'''
+        while self.runFlag:
+            # 发射烟雾动画信号
+            self.startAnimation_signal.emit()
+            # 判断
+            if self.times == 0:
+                # 发射变色信号
+                self.colorChange_signal.emit()
+                self.times = 10
+            # 休眠随机时间
+            t = random.randint(1000, 2000)/1000
+            self.sleep(t)
+            #
+            self.times = self.times - 1
+
+    def stop(self):
+        '''停止线程'''
+        self.times = 0
+        self.runFlag = False
+
+
+class TextSmokeLabel(TextLabel):
+    '''文字烟雾类'''
+
+    def __init__(self, text: str, parent: QWidget):
+        '''构造函数'''
+        super().__init__(text, parent)
+
+    def startAnimation(self):
+        '''启动动画'''
+        # 创建颜色变化动画
+        self.textColorAnimation = QPropertyAnimation(self, b"color")
+        # 创建位置变化动画
+        self.textPositionAnimation = QPropertyAnimation(self, b'pos')
+
+        # 变色动画持续随机12-15秒
+        self.textColorAnimation.setDuration(random.randint(12000, 15000))
+        # 位移动画持续随机6-10秒
+        self.textPositionAnimation.setDuration(random.randint(6000, 10000))
+
+        # 颜色
+        r = [100, 0, 25, 50, 75, 100, 125, 150, 175,
+             200, 210, 220, 225, 230, 235, 240, 245, 250, 255]
+        g = [100, 0, 25, 50, 75, 100, 125, 150, 175,
+             200, 210, 220, 225, 230, 235, 240, 245, 250, 255]
+        b = [100, 0, 25, 50, 75, 100, 125, 150, 175,
+             200, 210, 220, 225, 230, 235, 240, 245, 250, 255]
+        # 透明度
+        alpha = [100, 255, 225, 200, 175, 150, 125,
+                 100, 90, 75, 60, 50, 30, 25, 20, 15, 10, 5, 0]
+        # 关键帧
+        step = [i/len(r) for i in range(len(r))]
+
+        # 起始值 白色
+        self.textColorAnimation.setStartValue(QColor(255, 255, 255, 0))
+        # 起始位置
+        startx = random.randint(310, 340)
+        starty = random.randint(460, 470)
+        self.textPositionAnimation.setStartValue(QPoint(startx, starty))
+
+        # 循环设置关键帧
+        for i in range(0, len(r)):
+            self.textColorAnimation.setKeyValueAt(
+                step[i], QColor(r[i], g[i], b[i], alpha[i]))
+
+        # 结束值 白色
+        self.textColorAnimation.setEndValue(QColor(255, 255, 255, 0))
+        # 结束位置
+        endx = random.randint(150, 200)
+        endy = random.randint(200, 250)
+        self.textPositionAnimation.setEndValue(QPoint(endx, endy))
+
+        # 设置动画插值类型为-线性移动
+        self.textPositionAnimation.setEasingCurve(QEasingCurve.Linear)
+
+        # 创建并行动画组-并行动画组就是组内的动画同时执行
+        self.parallelAnimationGroup = QParallelAnimationGroup()
+        # 往动画组里添加动画
+        self.parallelAnimationGroup.addAnimation(self.textColorAnimation)
+        self.parallelAnimationGroup.addAnimation(self.textPositionAnimation)
+
+        # 启动动画组
+        self.parallelAnimationGroup.start()
+
+
 class MainWindow(QWidget):
     '''主窗口'''
 
@@ -105,14 +268,24 @@ class MainWindow(QWidget):
         '''构造函数'''
         super(MainWindow, self).__init__()
         self.app = app
+
         # 初始化窗体界面
         self.initUI()
-        # 实例化DetectSound(QThread对象) 来检测话筒音量
-        self.detectSound = DetectSound()
-        # 接收DetectSound传回来的信号并连接到self.setWave函数
-        self.detectSound.volume_signal.connect(self.setWave)
-        # 调用start执行DetectSound.run()里面的代码
-        self.detectSound.start()
+
+        # 创建检测话筒音量线程
+        self.detectSoundThread = DetectSoundThread()
+        # 接收DetectSoundThread传回来的信号并连接到self.setWave函数
+        self.detectSoundThread.volume_signal.connect(self.setWave)
+
+        # 创建文字烟雾线程
+        self.textSmokeThread = TextSmokeThread()
+        self.textSmokeThread.colorChange_signal.connect(self.textColorChange)
+        self.textSmokeThread.startAnimation_signal.connect(
+            self.startSmokeAnimation)
+
+        # 启动线程
+        self.detectSoundThread.start()
+        self.textSmokeThread.start()
 
     def initUI(self):
         '''初始化窗体界面'''
@@ -185,22 +358,45 @@ class MainWindow(QWidget):
         # 移动至指定坐标处
         self.hairLabel.move(self.hairX, self.hairY)
 
+        # 文字标签初始坐标
+        self.textLabelX = 480
+        self.textLabelY = 650
+        # 文字标签宽高
+        self.textLabelW = 320
+        self.textLabelH = 60
+        # 文字标签
+        self.textLabel = TextLabel("声音立绘展示器", self)
+        # 设置字体
+        self.textLabel.setFont(QFont('华文彩云', 32))
+        # 设置文字颜色
+        self.textLabel.setTextColor(QColor(255, 50, 50, 50))
+        # 设置坐标，大小
+        self.textLabel.setGeometry(
+            self.textLabelX, self.textLabelY, self.textLabelW, self.textLabelH)
+
     def keyPressEvent(self, e: QKeyEvent):
         '''重写键盘按下事件'''
-        # 判断按下的键是否为空格键 是的话就创建动画让假发飞回来
+        # 判断按下的键是否为空格键 是的话就创建动画让假发和文字标签飞回来
         if e.key() == Qt.Key_Space:
             # 给hairLabel创建一个动画 类型为geometry
             hairAnimation = QPropertyAnimation(
                 self.hairLabel, b'geometry', self)
+            textAnimation = QPropertyAnimation(
+                self.textLabel, b'geometry', self)
             # 设置动画持续时长为1000毫秒
             hairAnimation.setDuration(1000)
+            textAnimation.setDuration(1000)
             # 动画结束位置为假发初始位置
             hairAnimation.setEndValue(
                 QRect(self.hairX, self.hairY, self.hairW, self.hairH))
+            textAnimation.setEndValue(
+                QRect(self.textLabelX, self.textLabelY, self.textLabelW, self.textLabelH))
             # 设置动画插值类型为“来回弹跳”
             hairAnimation.setEasingCurve(QEasingCurve.OutElastic)
+            textAnimation.setEasingCurve(QEasingCurve.OutElastic)
             # 开始动画效果
             hairAnimation.start()
+            textAnimation.start()
 
     def mousePressEvent(self, e: QMouseEvent):
         '''重写鼠标按下事件'''
@@ -229,15 +425,15 @@ class MainWindow(QWidget):
         '''重写鼠标右键菜单事件'''
         # 实例化一个QMenu对象
         menu = QMenu()
-        menu.setStyleSheet(""" 
-        QMenu { 
-            background-color: rgb(50,50,50); 
-            color: rgb(255,255,255); 
-            border: 1px solid ; 
-        } 
-        QMenu::item::selected { 
+        menu.setStyleSheet("""
+        QMenu {
+            background-color: rgb(50,50,50);
+            color: rgb(255,255,255);
+            border: 1px solid ;
+        }
+        QMenu::item::selected {
             color: orange;
-        } 
+        }
         """)
 
         # 添加关于菜单项
@@ -262,6 +458,7 @@ class MainWindow(QWidget):
         menu.addAction(about_action)
         menu.addSeparator()
         menu.addAction(exit_action)
+
         # 将e.pos()映射为屏幕全局坐标 然后在此坐标弹出菜单
         menu.exec_(self.mapToGlobal(e.pos()))
 
@@ -281,9 +478,33 @@ class MainWindow(QWidget):
     def exit(self):
         '''退出'''
         # 停止采样线程
-        self.detectSound.stop()
+        self.detectSoundThread.stop()
+        # 停止文字烟雾线程
+        self.textSmokeThread.stop()
         # 关闭窗体
         self.close()
+
+    def textColorChange(self):
+        '''文字标签颜色变化'''
+        self.textLabel.startAnimation()
+
+    def startSmokeAnimation(self):
+        '''启动文字烟雾动画'''
+        # 关键词文字
+        text = random.choice(keyword.kwlist)
+        # 创建标签
+        label = TextSmokeLabel(text, self)
+        # 设置字体
+        label.setFont(QFont('微软雅黑', 16))
+        # 设置文字颜色
+        label.setTextColor(QColor(255, 255, 255, 0))
+        # 设置坐标位置
+        lx = random.randint(300, 350)
+        ly = random.randint(450, 470)
+        label.move(lx, ly)
+        label.show()
+        # 启动动画
+        label.startAnimation()
 
 
 if __name__ == '__main__':
