@@ -17,9 +17,9 @@ APP_MESSAGE = '''声音立绘展示器'''
 # 作者
 AUTHOR = '''ordinary-student'''
 # 版本
-VERSION = '''v2.0.0'''
+VERSION = '''v2.0.1'''
 # 最后更新日期
-LAST_UPDATE = '''2021-07-11'''
+LAST_UPDATE = '''2021-07-12'''
 
 # 身体图片路径
 BODY_PIC_PATH = '''resources/body.png'''
@@ -473,7 +473,7 @@ class MainWindow(QWidget):
         '''关于'''
         # 显示弹窗
         QMessageBox.about(self, f'关于{APP_NAME}',
-                          "{}<br>{}<br>author：<a href='https://github.com/ordinary-student'>{}</a><br>版本：{}<br>Last-Update：{}<br>© Copyright {}".format(APP_NAME, APP_MESSAGE, AUTHOR, VERSION, LAST_UPDATE, LAST_UPDATE[0:4]))
+                          "{}<br>{}<br>author：<a href='https://github.com/ordinary-student'>{}</a><br>版本：{}<br>Last-Update：{}".format(APP_NAME, APP_MESSAGE, AUTHOR, VERSION, LAST_UPDATE))
 
     def exit(self):
         '''退出'''
